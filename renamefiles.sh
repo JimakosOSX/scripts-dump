@@ -24,10 +24,16 @@ cd $TARGET_DIR
 
 # Main logic is here
 for file in $(ls);do
+
+    if [[ ${file} == "$(basename $0)" ]];then
+        continue
+    fi
+
     hash=$(md5sum $file | cut -d ' ' -f1)
     filename=$(basename -- "$file")
     extension="${filename##*.}"
     filename="${filename%.*}"
+    
     mv -v ${file} ${hash}.${extension}
 done
 
