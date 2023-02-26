@@ -1,0 +1,88 @@
+---
+- name: backup :)
+  hosts: localhost
+  vars:
+    final_package_list: []
+    shell_env_files: 
+      [".zshrc", ".bashrc", ".vimrc"]
+
+  tags:
+  - backup
+
+  tasks:
+  - name: Get installed pkgs
+    package_facts:
+      manager: rpm
+
+  - name: Restrict package list to unique elements
+    set_fact:
+      final_package_list: "{{ packages | dict2items | json_query(query) | unique }}"
+    vars:
+      query: '[*].value[*][].name'
+
+  - name: Write package list to file
+    copy:
+      content: "{{ final_package_list }}"
+      dest: "./package_list"
+
+  - name: Collect unofficial repositories 
+    find:
+      paths: "/etc/yum.repos.d"
+      file_type: file
+      recurse: no
+      patterns: "^((?!fedora).)*repo$"
+      use_regex: yes
+    register: unofficial_repos
+
+  - name: Backup unofficial repositories
+    copy: 
+      src: "{{ item.path }}"
+      dest: "."
+    loop: "{{ unofficial_repos.files }}"
+
+  - name: Get shell environment files
+    copy:
+      src: '/home/{{ user}}/{{ item }}'
+      dest: "{{ item }}"
+      mode: '0644'
+    vars:
+      user: "{{ lookup('env', 'USER') }}"
+    loop: "{{ shell_env_files }}"
+
+
+- name: restore backup
+  hosts: localhost
+  tags:
+  - restore
+
+  tasks: 
+  - name: Get oh-my-zsh
+    uri:
+      url: "https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+      dest: "."
+
+  - name: Collect backed-up repositories 
+    find:
+      paths: "."
+      file_type: file
+      recurse: no
+      patterns: "*repo" 
+    register: backed_up_repos
+
+  - name: Restore unofficial repositories
+    copy: 
+      src: "{{ item.path }}"
+      dest: "/etc/yum.repos.d"
+    loop: "{{ backed_up_repos.files }}"
+
+  - name: Remove brackets from package list file 
+    shell: |
+      cat package_list | awk -F '[' '{print $2}' | awk -F ']' '{print $1}' | tr ',' '\n' | tr '"' ' ' | awk '{print $1}'
+    register: packages
+  
+  - name: DNF install packages
+    dnf: 
+      update_cache: yes
+      state: latest
+      name: "{{ item }}"
+    loop: "{{ packages.stdout_lines }}"
