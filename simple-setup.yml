@@ -1,4 +1,5 @@
 ---
+# intented to run as root, after installing ansible
 - name: setup local
   hosts: localhost
   remote_user: root

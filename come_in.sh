@@ -4,14 +4,14 @@ set -e
 
 # copy neovim configuration
 mkdir -pv ~/.config/nvim
-cp -v init.vim ~/.config/nvim/init.vim
+cp -v nvim/init.vim ~/.config/nvim/init.vim
 
 # Install vim-plug for neovim
 sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
        https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
 
 # Read packages for neovim
-readarray -t packages < nvim_pkg_list
+readarray -t packages < nvim/nvim_pkg_list
 
 # Install packages based on package manager
 if [[ -x /usr/bin/apt ]];then
@@ -40,7 +40,7 @@ EOF
 
 echo "nvim +PlugInstall +qall"
 
-# Bad way of getting our fonts
+# Dirty way of getting our fonts
 curl -s https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest | grep "browser_download_url.*Meslo.zip" | cut -d : -f2,3 | tr -d \"| wget -qi -
 
 mkdir -pv ~/.fonts
