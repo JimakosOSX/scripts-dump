@@ -3,6 +3,7 @@
 
 from time import sleep
 from py1337x import py1337x
+from os import environ
 
 def main():
     parse_torrents()
@@ -45,7 +46,7 @@ def magnets_to_file():
         return None
 
     # if magnet links have been collected
-    target_filename = search_string + ' magnets.txt'
+    target_filename = environ['HOME'] + '/' + search_string + ' magnets.txt'
     with open(target_filename, 'w') as f:
         for line in all_magnet_links:
             f.write(f"{line}\n")
