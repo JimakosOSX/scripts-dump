@@ -37,7 +37,8 @@ def save_magnets():
     for link in all_torrent_info:
         current_torrent = torrents.info(link)
         print('Saving magnet', current_torrent['name'])
-        all_magnet_links.append(current_torrent['magnetLink'])
+        name_and_magnetLink = str(current_torrent['name'] + ',' + current_torrent['magnetLink'])
+        all_magnet_links.append(name_and_magnetLink)
 
 def magnets_to_file():
 
@@ -54,5 +55,9 @@ def magnets_to_file():
 
 
 if __name__ == "__main__":
-    main()
-    exit(0)
+    try:
+        main()
+        exit(0)
+    except KeyboardInterrupt:
+        print("Cancelled.")
+        exit(1)
