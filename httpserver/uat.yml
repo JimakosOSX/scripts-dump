@@ -4,7 +4,7 @@
   any_errors_fatal: true
   gather_facts: false
   tasks:
-  - shell: go build main.go
+  - shell: gofmt -w main.go &&  go build main.go
     delegate_to: localhost
 
   - name: copy nick_task

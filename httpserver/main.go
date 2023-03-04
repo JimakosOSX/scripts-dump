@@ -1,5 +1,5 @@
-/* big thanks to 
- * https://www.digitalocean.com/community/tutorials/how-to-make-an-http-server-in-go 
+/* big thanks to
+ * https://www.digitalocean.com/community/tutorials/how-to-make-an-http-server-in-go
  * https://www.digitalocean.com/community/tutorials/how-to-use-json-in-go
  */
 
@@ -9,23 +9,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	human_df "github.com/dustin/go-humanize"
+	"github.com/go-ini/ini"
+	"github.com/mackerelio/go-osstat/cpu"
+	"github.com/mackerelio/go-osstat/memory"
+	"github.com/mikoim/go-loadavg"
+	"github.com/shirou/gopsutil/disk"
 	"io"
 	"net"
 	"net/http"
 	"os"
-    "time"
-    "unicode"
-    "github.com/mackerelio/go-osstat/cpu"
-    "github.com/mackerelio/go-osstat/memory"
-    "github.com/mikoim/go-loadavg"
-    human_df "github.com/dustin/go-humanize"
-    "github.com/shirou/gopsutil/disk"
-    "github.com/go-ini/ini"
+	"time"
+	"unicode"
 )
 
 const keyServerAddr = "clusters.gr"
+
 var DEBUG, IS_DEBUG = os.LookupEnv("DEBUG")
-/* 
+
+/*
 TODO
    { "USER_AGENT": user_agent },
    - all info as functions
@@ -35,7 +37,6 @@ TODO
    - read an ini file to get parameters eg debug
 */
 
-    
 func removeSpace(s string) string {
 	rr := make([]rune, 0, len(s))
 	for _, r := range s {
@@ -47,10 +48,10 @@ func removeSpace(s string) string {
 }
 
 func main() {
-    
-    if DEBUG != "" { 
-        fmt.Printf("DEBUG = %s\n", DEBUG)
-    }
+
+	if DEBUG != "" {
+		fmt.Printf("DEBUG = %s\n", DEBUG)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", getRoot)
@@ -75,7 +76,7 @@ func main() {
 		fmt.Printf("error listening for server: %s\n", err)
 	}
 
-    	// err := http.ListenAndServe(":80", mux)
+	// err := http.ListenAndServe(":80", mux)
 
 	// if errors.Is(err, http.ErrServerClosed) {
 	// 	fmt.Printf("server closed\n")
@@ -85,18 +86,18 @@ func main() {
 	// 	os.Exit(1)
 	// }
 }
- 
+
 func ReadOSRelease(configfile string, target_key string) string {
-    cfg, err := ini.Load(configfile)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Fail to read file: %s\n", err)
-        os.Exit(1)
-    }
+	cfg, err := ini.Load(configfile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Fail to read file: %s\n", err)
+		os.Exit(1)
+	}
 
-    ConfigParams := make(map[string]string)
-    ConfigParams[target_key] = cfg.Section("").Key(target_key).String()
+	ConfigParams := make(map[string]string)
+	ConfigParams[target_key] = cfg.Section("").Key(target_key).String()
 
-    return ConfigParams[target_key]
+	return ConfigParams[target_key]
 }
 
 func getRoot(w http.ResponseWriter, r *http.Request) {
@@ -110,14 +111,14 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Could not read body: %s\n", err)
 	}
 
-    // START --- Gathering information --- START
-    start := time.Now()
+	// START --- Gathering information --- START
+	start := time.Now()
 
-    // hostname
-    hostname, _ := os.Hostname()
+	// hostname
+	hostname, _ := os.Hostname()
 
-    // cpu
-    before, err := cpu.Get()
+	// cpu
+	before, err := cpu.Get()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		return
@@ -130,128 +131,125 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total := float64(after.Total - before.Total)
-    
-    // memory
-    memory, err := memory.Get()
+
+	// memory
+	memory, err := memory.Get()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		return
 	}
 
-    // loadavg
-    loadavg, err := loadavg.Parse()
+	// loadavg
+	loadavg, err := loadavg.Parse()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
-        return 
+		return
 	}
 
-    // OS Release
-    OSRelease := ReadOSRelease("/etc/os-release", "PRETTY_NAME")
+	// OS Release
+	OSRelease := ReadOSRelease("/etc/os-release", "PRETTY_NAME")
 
-    // Disk size
-    formatter := "%-14s %7s %7s %7s %4s %s\n"
-    io.WriteString(w, fmt.Sprintf(formatter, "Filesystem", "Size", "Used", "Avail", "Use%", "Mounted on"))
+	// Disk size
+	formatter := "%-14s %7s %7s %7s %4s %s\n"
+	io.WriteString(w, fmt.Sprintf(formatter, "Filesystem", "Size", "Used", "Avail", "Use%", "Mounted on"))
 
-    parts, _ := disk.Partitions(true)
-    for _, p := range parts {
-        device := p.Mountpoint
-        s, _ := disk.Usage(device)
+	parts, _ := disk.Partitions(true)
+	for _, p := range parts {
+		device := p.Mountpoint
+		s, _ := disk.Usage(device)
 
-        if s.Total == 0 {
-            continue
-        }
+		if s.Total == 0 {
+			continue
+		}
 
-        percent := fmt.Sprintf("%2.f%%", s.UsedPercent)
+		percent := fmt.Sprintf("%2.f%%", s.UsedPercent)
 
-        if p.Mountpoint == "/" {
+		if p.Mountpoint == "/" {
 
-            io.WriteString(w, fmt.Sprintf(formatter,
-                s.Fstype,
-                human_df.Bytes(s.Total),
-                human_df.Bytes(s.Used),
-                human_df.Bytes(s.Free),
-                percent,
-                p.Mountpoint,
-            ))
-        }
-    }
+			io.WriteString(w, fmt.Sprintf(formatter,
+				s.Fstype,
+				human_df.Bytes(s.Total),
+				human_df.Bytes(s.Used),
+				human_df.Bytes(s.Free),
+				percent,
+				p.Mountpoint,
+			))
+		}
+	}
 
-   // IP Addresses
-   netAddrs, err := net.InterfaceAddrs()
- 
-   if err != nil {
-       fmt.Fprintf(os.Stderr, "Error getting IP addresses: %s\n", err)
-       os.Exit(1)
-   }
-   // Read SimpleX chat fingerprint address
-   simplex_addr, err := os.ReadFile("/etc/opt/simplex/fingerprint")
+	// IP Addresses
+	netAddrs, err := net.InterfaceAddrs()
 
-   if err != nil {
-       fmt.Fprintf(os.Stderr, "SimpleX: Error opening file: %s\n", err)
-       os.Exit(1)
-   }
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting IP addresses: %s\n", err)
+		os.Exit(1)
+	}
+	// Read SimpleX chat fingerprint address
+	simplex_addr, err := os.ReadFile("/etc/opt/simplex/fingerprint")
 
-   simplex_fingerprint := removeSpace( string(simplex_addr) )
-   simplex_full_address := "smp://" + simplex_fingerprint + ":PASSWORD@" + hostname
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SimpleX: Error opening file: %s\n", err)
+		os.Exit(1)
+	}
 
-   // Execution time
-   elapsed := time.Since(start)
-   // END --- Gathering information --- END
+	simplex_fingerprint := removeSpace(string(simplex_addr))
+	simplex_full_address := "smp://" + simplex_fingerprint + ":PASSWORD@" + hostname
 
-    if IS_DEBUG {
-        fmt.Printf("(DEBUG) %s: got / request. first=%s, body: %s\n",
-        ctx.Value(keyServerAddr),
-		get_fqdn,
-		body)
-    }
-     
+	// Execution time
+	elapsed := time.Since(start)
+	// END --- Gathering information --- END
+
+	if IS_DEBUG {
+		fmt.Printf("(DEBUG) %s: got / request. first=%s, body: %s\n",
+			ctx.Value(keyServerAddr),
+			get_fqdn,
+			body)
+	}
 
 	io.WriteString(w, fmt.Sprintf("hostname = %s\n", hostname))
 
-    io.WriteString(w, fmt.Sprintf("cpu user: %.2f %%\n", float64(after.User-before.User)/total*100))
+	io.WriteString(w, fmt.Sprintf("cpu user: %.2f %%\n", float64(after.User-before.User)/total*100))
 	io.WriteString(w, fmt.Sprintf("cpu system: %.2f %%\n", float64(after.System-before.System)/total*100))
 	io.WriteString(w, fmt.Sprintf("cpu idle: %.2f %%\n", float64(after.Idle-before.Idle)/total*100))
 
-    io.WriteString(w, fmt.Sprintf("memory total: %.2f MB\n", (float64(memory.Total) * float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory used: %.2f MB\n", (float64(memory.Used) * float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory cached: %.2f MB\n", (float64(memory.Cached) * float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory free: %.2f MB\n", (float64(memory.Free) * float64(0.000001))))
+	io.WriteString(w, fmt.Sprintf("memory total: %.2f MB\n", (float64(memory.Total)*float64(0.000001))))
+	io.WriteString(w, fmt.Sprintf("memory used: %.2f MB\n", (float64(memory.Used)*float64(0.000001))))
+	io.WriteString(w, fmt.Sprintf("memory cached: %.2f MB\n", (float64(memory.Cached)*float64(0.000001))))
+	io.WriteString(w, fmt.Sprintf("memory free: %.2f MB\n", (float64(memory.Free)*float64(0.000001))))
 	io.WriteString(w, fmt.Sprintf("load average: %.2f %.2f %.2f\n", loadavg.LoadAverage1, loadavg.LoadAverage5, loadavg.LoadAverage10))
-    io.WriteString(w, fmt.Sprintf("OS: %s\n", OSRelease))
+	io.WriteString(w, fmt.Sprintf("OS: %s\n", OSRelease))
 
-    for _, ip_addr := range netAddrs {
-        io.WriteString(w, fmt.Sprintf("IP: %s\n", ip_addr))
-      }
+	for _, ip_addr := range netAddrs {
+		io.WriteString(w, fmt.Sprintf("IP: %s\n", ip_addr))
+	}
 
-    io.WriteString(w, fmt.Sprintf("Time to gather info: %s\n", elapsed))
-    io.WriteString(w, fmt.Sprintf("Date: %02d/%02d/%02d %02d:%02d\n", start.Day(), start.Month(), start.Year(), start.Hour(), start.Minute()))
-    io.WriteString(w, fmt.Sprintf("SimpleX: %s\n", simplex_full_address))
+	io.WriteString(w, fmt.Sprintf("Time to gather info: %s\n", elapsed))
+	io.WriteString(w, fmt.Sprintf("Date: %02d/%02d/%02d %02d:%02d\n", start.Day(), start.Month(), start.Year(), start.Hour(), start.Minute()))
+	io.WriteString(w, fmt.Sprintf("SimpleX: %s\n", simplex_full_address))
 }
 
 func getNick(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-    
-    if IS_DEBUG {
-        fmt.Printf("(DEBUG) %s: got /nick request\n", ctx.Value(keyServerAddr))
-    }
-
-    /* 
-	myName := r.PostFormValue("myName")
-	if myName == "" {
-		w.Header().Set("x-missing-field", "myName")
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	if IS_DEBUG {
+		fmt.Printf("(DEBUG) %s: got /nick request\n", ctx.Value(keyServerAddr))
 	}
-    */
-   nick_task, err := os.ReadFile("/opt/nick_task")
 
-   if err != nil {
-       fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-       os.Exit(1)
-   }
+	/*
+		myName := r.PostFormValue("myName")
+		if myName == "" {
+			w.Header().Set("x-missing-field", "myName")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	*/
+	nick_task, err := os.ReadFile("/opt/nick_task")
 
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
 
-   io.WriteString(w, fmt.Sprintf("%s\n", nick_task))
+	io.WriteString(w, fmt.Sprintf("%s\n", nick_task))
 }
