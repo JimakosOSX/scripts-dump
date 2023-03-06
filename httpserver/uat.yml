@@ -7,24 +7,17 @@
   - shell: gofmt -w main.go &&  go build main.go
     delegate_to: localhost
 
-      #  - name: copy nick_task
-      #    copy: 
-      #      src: ./nick_task
-      #      dest: /opt/nick_task
-      #    notify: restart sysinfo service
-
   - name: copy api file
     copy:
       src: ./main
       dest:  /opt/sysinfo
     notify: restart sysinfo service
 
-      #  - name: copy api config file
-      #    copy:
-      #      src: ./config.ini
-      #      dest:  /opt/config.ini
-      #    notify: restart sysinfo service
-
+  - name: copy api config file
+    copy:
+      src: ./config.ini
+      dest:  /opt/config.ini
+    notify: restart sysinfo service
 
   handlers:
   - name: restart sysinfo service
