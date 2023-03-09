@@ -4,7 +4,7 @@
   any_errors_fatal: true
   gather_facts: false
   tasks:
-  - shell: gofmt -w main.go &&  go build main.go
+  - shell: gofmt -w main.go && go build -ldflags "-s -w" main.go
     delegate_to: localhost
 
   - name: copy api file

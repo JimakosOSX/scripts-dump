@@ -2,16 +2,17 @@
  * https://www.digitalocean.com/community/tutorials/how-to-make-an-http-server-in-go
  * https://www.digitalocean.com/community/tutorials/how-to-use-json-in-go
 TODO
-   - all info as functions
-   - better writing
-   - remove unused stuff, add comments
-   - return JSON result
+    - all info as functions
+    - better writing
+    - remove unused stuff, add comments
+    - return JSON result
 */
 
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +31,8 @@ import (
 )
 
 var user_config = ReadConfigFile("config.ini")
-
-var keyServerAddr = user_config.Section("server").Key("server_address").String()
+var debug_mode, _ = user_config.Section("").Key("debug_mode").Bool()
+var keyServerAddr = user_config.Section("").Key("server_address").String()
 
 func ReadConfigFile(configfile string) *ini.File {
 	cfg, err := ini.Load(configfile)
@@ -65,19 +66,22 @@ func redirect(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	debug_mode, _ := user_config.Section("").Key("debug_mode").Bool()
-	//	http_port := user_config.Section("server").Key("http_port").String()
-	https_port := user_config.Section("server").Key("https_port").String()
-	tls_path_crt := user_config.Section("server").Key("tls_path_crt").String()
-	tls_path_key := user_config.Section("server").Key("tls_path_key").String()
+	var https_port, tls_path_crt, tls_path_key string
 
 	if debug_mode {
-		fmt.Println("</> Debugging enabled </>")
+		https_port = user_config.Section("devel").Key("https_port").String()
+		tls_path_crt = user_config.Section("devel").Key("tls_path_crt").String()
+		tls_path_key = user_config.Section("devel").Key("tls_path_key").String()
+		fmt.Println("</> Debugging mode </>")
+	} else {
+		https_port = user_config.Section("prod").Key("https_port").String()
+		tls_path_crt = user_config.Section("prod").Key("tls_path_crt").String()
+		tls_path_key = user_config.Section("prod").Key("tls_path_key").String()
+		fmt.Println("Production mode")
 	}
 
 	mux_tls := http.NewServeMux()
 	mux_tls.HandleFunc("/", getRoot)
-	mux_tls.HandleFunc("/nick", getNick)
 
 	ctx_tls := context.Background()
 
@@ -113,8 +117,6 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 		handleErrors(body_err)
 	}
 
-	debug_mode, _ := user_config.Section("").Key("debug_mode").Bool()
-
 	// START --- Gathering information --- START
 	start := time.Now()
 
@@ -135,12 +137,20 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total := float64(after.Total - before.Total)
+	cpu_user := fmt.Sprintf("%.2f%%", float64(after.User-before.User)/total*100)
+	cpu_system := fmt.Sprintf("%.2f%%", float64(after.System-before.System)/total*100)
+	cpu_idle := fmt.Sprintf("%.2f%%", float64(after.Idle-before.Idle)/total*100)
 
 	// memory
 	memory, err := memory.Get()
 	if err != nil {
 		handleErrors(err)
 	}
+
+	memory_total := fmt.Sprintf("%.2f MB", (float64(memory.Total) * float64(0.000001)))
+	memory_used := fmt.Sprintf("%.2f MB", (float64(memory.Used) * float64(0.000001)))
+	memory_cached := fmt.Sprintf("%.2f MB", (float64(memory.Cached) * float64(0.000001)))
+	memory_free := fmt.Sprintf("%.2f MB", (float64(memory.Free) * float64(0.000001)))
 
 	// loadavg
 	loadavg, err := loadavg.Parse()
@@ -149,7 +159,7 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// OS Release
-	OS_release := ReadConfigFile("/etc/os-release").Section("").Key("PRETTY_NAME")
+	OS_release := ReadConfigFile("/etc/os-release").Section("").Key("PRETTY_NAME").String()
 
 	// Disk size
 	target_mountpoint := user_config.Section("").Key("target_mountpoint").String()
@@ -182,10 +192,21 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 
 	// IP Addresses
 	netAddrs, err := net.InterfaceAddrs()
+	var ip_addresses []net.IP
+
+	for _, ip_addr := range netAddrs {
+		if ipnet, ok := ip_addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			// check if IPv4 or IPv6 is not nil
+			if ipnet.IP.To4() != nil || ipnet.IP.To16 != nil {
+				ip_addresses = append(ip_addresses, ipnet.IP)
+			}
+		}
+	}
 
 	if err != nil {
 		handleErrors(err)
 	}
+
 	// Read SimpleX chat fingerprint address
 	simplex_addr, err := os.ReadFile("/etc/opt/simplex/fingerprint")
 
@@ -196,8 +217,8 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 	simplex_fingerprint := removeSpace(string(simplex_addr))
 	simplex_full_address := "smp://" + simplex_fingerprint + ":PASSWORD@" + hostname
 
-	// Execution time
-	elapsed := time.Since(start)
+	formatted_date := fmt.Sprintf("%02d/%02d/%02d %02d:%02d", start.Day(), start.Month(), start.Year(), start.Hour(), start.Minute())
+
 	// END --- Gathering information --- END
 
 	if debug_mode {
@@ -207,50 +228,32 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 			body)
 	}
 
-	io.WriteString(w, fmt.Sprintf("hostname: %s\n", hostname))
-	io.WriteString(w, fmt.Sprintf("\n---ROOTFS%vROOTFS---\n", root_fs_info))
-	io.WriteString(w, fmt.Sprintf("cpu user: %.2f %%\n", float64(after.User-before.User)/total*100))
-	io.WriteString(w, fmt.Sprintf("cpu system: %.2f %%\n", float64(after.System-before.System)/total*100))
-	io.WriteString(w, fmt.Sprintf("cpu idle: %.2f %%\n", float64(after.Idle-before.Idle)/total*100))
-
-	io.WriteString(w, fmt.Sprintf("memory total: %.2f MB\n", (float64(memory.Total)*float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory used: %.2f MB\n", (float64(memory.Used)*float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory cached: %.2f MB\n", (float64(memory.Cached)*float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("memory free: %.2f MB\n", (float64(memory.Free)*float64(0.000001))))
-	io.WriteString(w, fmt.Sprintf("load average: %.2f %.2f %.2f\n", loadavg.LoadAverage1, loadavg.LoadAverage5, loadavg.LoadAverage10))
-	io.WriteString(w, fmt.Sprintf("OS: %s\n", OS_release))
-
-	for _, ip_addr := range netAddrs {
-		io.WriteString(w, fmt.Sprintf("IP: %s\n", ip_addr))
+	// convert to json
+	data := map[string]interface{}{
+		"hostname":       hostname,
+		"cpu user":       cpu_user,
+		"cpu system":     cpu_system,
+		"cpu idle":       cpu_idle,
+		"memory total":   memory_total,
+		"memory used":    memory_used,
+		"memory cached":  memory_cached,
+		"memory free":    memory_free,
+		"load average1":  loadavg.LoadAverage1,
+		"load average5":  loadavg.LoadAverage5,
+		"load average10": loadavg.LoadAverage10,
+		"OS":             OS_release,
+		"RootFS":         root_fs_info,
+		"SimpleX":        simplex_full_address,
+		"Date":           formatted_date,
+		"IP Addresses":   ip_addresses,
 	}
 
-	io.WriteString(w, fmt.Sprintf("Time to gather info: %s\n", elapsed))
-	io.WriteString(w, fmt.Sprintf("Date: %02d/%02d/%02d %02d:%02d\n", start.Day(), start.Month(), start.Year(), start.Hour(), start.Minute()))
-	io.WriteString(w, fmt.Sprintf("SimpleX: %s\n", simplex_full_address))
-}
-
-func getNick(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-	debug_mode, _ := user_config.Section("").Key("debug_mode").Bool()
-
-	if debug_mode {
-		fmt.Printf("(DEBUG) %s: got /nick request\n", ctx.Value(keyServerAddr))
-	}
-
-	/*
-		myName := r.PostFormValue("myName")
-		if myName == "" {
-			w.Header().Set("x-missing-field", "myName")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	*/
-	nick_task, err := os.ReadFile("/opt/nick_task")
+	jsonData, err := json.Marshal(data)
 
 	if err != nil {
 		handleErrors(err)
 	}
 
-	io.WriteString(w, fmt.Sprintf("%s\n", nick_task))
+	io.WriteString(w, fmt.Sprintf("%s\n", jsonData))
+
 }
