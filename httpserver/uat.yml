@@ -3,17 +3,19 @@
   remote_user: root
   any_errors_fatal: true
   gather_facts: false
+  vars:
+    target_src: "main.go"
   tasks:
   - shell: gofmt -w main.go && go build -ldflags "-s -w" main.go
     delegate_to: localhost
-
-  - name: copy api file
+  
+  - name: copy executable
     copy:
       src: ./main
       dest:  /opt/sysinfo
     notify: restart sysinfo service
 
-  - name: copy api config file
+  - name: copy config 
     copy:
       src: ./config.ini
       dest:  /opt/config.ini
