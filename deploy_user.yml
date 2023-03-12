@@ -1,0 +1,107 @@
+---
+- name: create local user
+  become: yes
+  hosts: localhost
+  vars_prompt:
+    - name: username
+      prompt: Enter username for pairing
+
+    - name: password
+      prompt: Enter users password for pairing
+  vars:
+  - changes:
+    - { orig: "become=", new: "become=True" }
+    - { orig: "become_ask_pass=", new: "become_ask_pass=False" }
+    - { orig: "become_method=", new: "become_method=sudo" }
+    - { orig: "become_user=", new: "become_user=root" }
+    - { orig: "deprecation_warnings=", new: "deprecation_warning=False" }
+    - { orig: "inventory=", new: "inventory=/home/{{ username }}/hosts" }
+
+  tasks:
+  - name: create user {{ username }}
+    user: 
+      state: present
+      name: "{{ username }}"
+      password: "{{ password | password_hash('sha512') }}"
+  
+  - name: passwordless sudo
+    copy:
+      content: "{{ username }} ALL=(ALL:ALL) NOPASSWD: ALL"
+      dest:  "/etc/sudoers.d/{{ username }}"
+      validate: "/usr/sbin/visudo -csf %s"
+
+  - name: create ssh dir for {{ username }} 
+    file:
+      path: "/home/{{ username }}/.ssh"
+      state: directory
+
+  - name: create ssh keypair for {{ username }}
+    community.crypto.openssh_keypair:
+      path: "/home/{{ username }}/.ssh/id_rsa"
+
+
+  - name: copy keypair of {{ username }}
+    copy:
+      remote_src: true
+      src: "/home/{{ username }}/.ssh/id_rsa.pub"
+      dest: /tmp/id_rsa.pub
+
+  - name: export username
+    set_fact:
+      target_username: "{{ username }}"
+
+  - name: export pw
+    set_fact:
+      target_password: "{{ password }}"
+
+  - name: copy default ansible.cfg
+    copy:
+      src: /etc/ansible/ansible.cfg
+      dest: "/home/{{ username }}/ansible.cfg"
+
+  - name: replace options in ansible.cfg
+    lineinfile:
+      path: "/home/{{ username }}/ansible.cfg"
+      regexp: ".*{{ item.orig }}.*"
+      line: "{{ item.new }}" 
+    loop: "{{ changes }}" 
+
+  - name: create roles dir
+    file:
+      path: "/home/{{ username }}/roles"
+      state: directory 
+
+  - name: fix {{ username }} dir permissions
+    file:
+      path: "/home/{{ username }}"
+      state: directory
+      owner: "{{ username }}"
+      group: "{{ username }}"
+      recurse: yes
+  
+
+- name: create user remotely
+  remote_user: root
+  hosts: all
+  vars:
+    username: "{{ hostvars['localhost']['target_username'] }}"
+    password: "{{ hostvars['localhost']['target_password'] }}"
+  tasks:
+  - name: create user {{ username }}
+    user: 
+      state: present
+      name: "{{ username }}"
+      password: "{{ password | password_hash('sha512') }}"
+  
+  - name: passwordless sudo
+    copy:
+      content: "{{ username }}  ALL=(ALL:ALL) NOPASSWD: ALL"
+      dest:  "/etc/sudoers.d/{{ username }}"
+      validate: "/usr/sbin/visudo -csf %s"
+
+  - name: copy ssh keypair from local {{ username }}
+    ansible.posix.authorized_key:
+      user: "{{ username }}"
+      state: present
+      key: "{{ lookup('file', '/tmp/id_rsa.pub') }}"
+
