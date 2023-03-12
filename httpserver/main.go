@@ -176,7 +176,6 @@ func collect_info() []byte {
 			"size_used":    human_df.Bytes(s.Used),
 			"size_free":    human_df.Bytes(s.Free),
 			"percent_used": percent,
-			"mountpoint":   p.Mountpoint,
 		}
 
 	}
